@@ -22,6 +22,9 @@ pub use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
+use crate::config::CLOCK_FREQ;
+use crate::timer::TICKS_PER_SEC;
+use crate::timer::get_time_ms;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -43,6 +46,7 @@ pub struct TaskManager {
 struct TaskManagerInner {
     /// task list
     tasks: [TaskControlBlock; MAX_APP_NUM],
+    
     /// id of current `Running` task
     current_task: usize,
 }
@@ -54,6 +58,9 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            first_time: 0,
+            dispatched: false,
+            syscall_times: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, t) in tasks.iter_mut().enumerate().take(num_app) {
             t.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -64,6 +71,7 @@ lazy_static! {
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
+                    
                     current_task: 0,
                 })
             },
@@ -80,6 +88,9 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.first_time = get_time_ms();
+        task0.dispatched = true;
+        info!("set task {} dispatched time: {}", 0, task0.first_time);
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -121,8 +132,15 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
+            //info!("currut task: {:?}", current);
             inner.tasks[next].task_status = TaskStatus::Running;
+            if  inner.tasks[next].dispatched == false {
+                inner.tasks[next].first_time = get_time_ms();
+                inner.tasks[next].dispatched = true;
+                info!("set task {} dispatched time: {}", next, inner.tasks[next].first_time);
+            }
             inner.current_task = next;
+
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -130,6 +148,7 @@ impl TaskManager {
             unsafe {
                 __switch(current_task_cx_ptr, next_task_cx_ptr);
             }
+            //info!("current task again {:?}", current);
             // go back to user mode
         } else {
             panic!("All applications completed!");
@@ -137,6 +156,35 @@ impl TaskManager {
     }
 
     // LAB1: Try to implement your function to update or get task info!
+
+    fn get_current_task_status(&self) -> TaskStatus {
+        TaskStatus::Running
+    }
+
+    fn get_current_task_costed_time(&self) -> usize {
+        let now = get_time_ms();
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        let costs = now - inner.tasks[current].first_time ;
+        info!("task {:?} cost time {:?}", current, costs);
+        costs
+
+    }
+
+    fn add_one_to_current_task(&self, call_id: usize)  {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[call_id] += 1;
+        //info!("add task {current} syscall {call_id} to {:?}", inner.tasks[current].syscall_times[call_id]);
+    }
+
+    fn get_current_task_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times.clone()
+    }
+
 }
 
 /// Run the first task in task list.
@@ -172,5 +220,22 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
+pub fn add_one_while_syscall(id: usize) {
+    TASK_MANAGER.add_one_to_current_task(id);
+}
+
 // LAB1: Public functions implemented here provide interfaces.
 // You may use TASK_MANAGER member functions to handle requests.
+
+use super::syscall::TaskInfo;
+pub fn get_task_info_inner(t: *mut TaskInfo) {
+
+    unsafe {
+        *t = TaskInfo {
+            status :  TASK_MANAGER.get_current_task_status(), 
+            syscall_times: TASK_MANAGER.get_current_task_syscall_times(),
+            time: TASK_MANAGER.get_current_task_costed_time(),
+        }
+    }
+
+}

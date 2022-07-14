@@ -32,6 +32,9 @@ ifdef INITPROC
 	cp -f user/build/elf/ch$(CHAPTER)_usertest.elf user/build/elf/ch$(CHAPTER)b_initproc.elf
 endif
 	make -C ../os run | tee stdout-ch$(CHAPTER)
+	echo "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+	cat stdout-ch$(CHAPTER)
+	echo "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
 	python3 check/ch$(CHAPTER).py < stdout-ch$(CHAPTER)
 
 ifdef LAB
