@@ -15,7 +15,7 @@ pub fn get_time_us() -> usize {
 }
 
 pub fn get_time_ms() -> usize {
-    time::read() / (CLOCK_FREQ / MILLI_PER_SEC)
+    get_time_us() / 1000
 }
 
 

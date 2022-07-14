@@ -162,10 +162,11 @@ impl TaskManager {
     }
 
     fn get_current_task_costed_time(&self) -> usize {
-        let now = get_time_ms();
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-
+        let now = get_time_ms();
+        info!("task {:?} now time is {:?}", current, now);
+        info!("task {:?} first time is {:?}", current, inner.tasks[current].first_time);
         let costs = now - inner.tasks[current].first_time ;
         info!("task {:?} cost time {:?}", current, costs);
         costs
